@@ -1,11 +1,12 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import MicRecorder from 'mic-recorder-to-mp3';
 import { Button } from '@/components/ui/button';
 import { Mic, Square, Play, Pause } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const Mp3Recorder = new MicRecorder({ bitRate: 128 });
+// Initialize recorder outside component to avoid re-creation
+let mediaRecorder: MediaRecorder | null = null;
+const chunks: Blob[] = [];
 
 export const VoiceRecorder = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -24,26 +25,40 @@ export const VoiceRecorder = () => {
     }
   }, [audioBlob]);
 
-  const startRecording = () => {
-    Mp3Recorder.start()
-      .then(() => setIsRecording(true))
-      .catch((e: Error) => {
-        toast({
-          title: "Error",
-          description: "Please allow microphone access to record audio.",
-          variant: "destructive",
-        });
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      
+      mediaRecorder.ondataavailable = (e) => {
+        chunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        chunks.length = 0; // Clear the chunks array
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Please allow microphone access to record audio.",
+        variant: "destructive",
       });
+    }
   };
 
   const stopRecording = () => {
-    Mp3Recorder.stop()
-      .getMp3()
-      .then(([buffer, blob]: [Buffer, Blob]) => {
-        setAudioBlob(blob);
-        setIsRecording(false);
-      })
-      .catch((e: Error) => console.error(e));
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      setIsRecording(false);
+    }
   };
 
   const togglePlayback = () => {
